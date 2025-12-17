@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two Balls: A Cosmic Gift</title>
+    <style>
+        :root {
+            --space-bg: #0a0015;
+            --deep-black: #000000;
+            --star-white: #ffffff;
+            --nebula-purple: #a78bfa;
+            --nebula-pink: #ff006e;
+            --nebula-cyan: #00f0ff;
+            --gold: #ffd60a;
+            --ocean-deep: #0a3d5c;
+            --ocean-bright: #1b5f8c;
+            --land-dark: #1a3a0f;
+            --land-bright: #2d5016;
+            --atmosphere: #87ceeb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+            background: var(--deep-black);
+            color: white;
+            font-family: 'Georgia', 'Garamond', serif;
+        }
+
+        body {
+            height: 700vh;
+        }
+
+        canvas {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .scroll-tracker {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 240, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            z-index: 1000;
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            color: #00f0ff;
+            font-family: 'Courier New', monospace;
+        }
+
+        .chapter-text {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 36px;
+            line-height: 1.8;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            z-index: 500;
+            pointer-events: none;
+            max-width: 85%;
+            color: rgba(255, 255, 255, 0.9);
+            text-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        .chapter-text.visible {
+            opacity: 1;
+        }
+
+        .progress-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #00f0ff, #ff006e, #ffd60a);
+            z-index: 999;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="mainCanvas"></canvas>
+    <div class="chapter-text" id="chapterText"></div>
+    <div class="scroll-tracker" id="scrollTracker">0%</div>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <script>
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // ==================== BALL CLASS ====================
+        class Ball {
+            constructor(x, y, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = 0;
+                this.vy = 0;
+                this.radius = radius;
+                this.color = color;
+                this.glow = 0.3;
+                this.mass = 1;
+                this.trail = [];
+                this.maxTrail = 40;
+            }
+
+            applyForce(fx, fy) {
+                this.vx += fx / this.mass;
+                this.vy += fy / this.mass;
+            }
+
+            update() {
+                this.x += this.vx * 0.016 * 60;
+                this.y += this.vy * 0.016 * 60;
+                this.vx *= 0.98;
+                this.vy *= 0.98;
+                this.trail.push({ x: this.x, y: this.y });
+                if (this.trail.length > this.maxTrail) {
+                    this.trail.shift();
+                }
+            }
+
+            draw(ctx) {
+                for (let i = 0; i < this.trail.length; i++) {
+                    const t = this.trail[i];
+                    const alpha = (i / this.trail.length) * 0.15;
+                    ctx.fillStyle = this.color.replace('1)', `${alpha})`);
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, this.radius * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 25 * this.glow;
+                ctx.strokeStyle = this.color.replace('1)', `${this.glow})`);
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius + 12, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = 'rgba(255, 255, 255, ' + (this.glow * 0.7) + ')';
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.35, this.radius * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // ==================== PARTICLE CLASS ====================
+        class Particle {
+            constructor(x, y, vx, vy, life, color, size = 2) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.life = life;
+                this.maxLife = life;
+                this.color = color;
+                this.size = Math.random() * size + 0.5;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.08;
+                this.life--;
+            }
+
+            draw(ctx) {
+                const alpha = this.life / this.maxLife;
+                ctx.fillStyle = this.color.replace('1)', `${alpha})`);
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        const particles = [];
+
+        function emitParticles(x, y, count, color, vx = 0, vy = 0, spread = 3, size = 2) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * spread;
+                particles.push(new Particle(
+                    x + (Math.random() - 0.5) * 15,
+                    y + (Math.random() - 0.5) * 15,
+                    Math.cos(angle) * speed + vx,
+                    Math.sin(angle) * speed + vy,
+                    80,
+                    color,
+                    size
+                ));
+            }
+        }
+
+        // ==================== NOISE FUNCTION ====================
+        function perlinNoise(x, y, z = 0) {
+            const xi = Math.floor(x) & 255;
+            const yi = Math.floor(y) & 255;
+            const zi = Math.floor(z) & 255;
+
+            const xf = x - Math.floor(x);
+            const yf = y - Math.floor(y);
+            const zf = z - Math.floor(z);
+
+            const u = xf * xf * (3 - 2 * xf);
+            const v = yf * yf * (3 - 2 * yf);
+            const w = zf * zf * (3 - 2 * zf);
+
+            const seed = 12345;
+            const hash = (i) => Math.sin(i * 12.9898) * 43758.5453 % 1;
+
+            const n000 = hash(xi + yi * 73 + zi * 41);
+            const n100 = hash(xi + 1 + yi * 73 + zi * 41);
+            const n010 = hash(xi + (yi + 1) * 73 + zi * 41);
+            const n110 = hash(xi + 1 + (yi + 1) * 73 + zi * 41);
+            const n001 = hash(xi + yi * 73 + (zi + 1) * 41);
+            const n101 = hash(xi + 1 + yi * 73 + (zi + 1) * 41);
+            const n011 = hash(xi + (yi + 1) * 73 + (zi + 1) * 41);
+            const n111 = hash(xi + 1 + (yi + 1) * 73 + (zi + 1) * 41);
+
+            const nx0 = n000 * (1 - u) + n100 * u;
+            const nx1 = n010 * (1 - u) + n110 * u;
+            const ny0 = nx0 * (1 - v) + nx1 * v;
+
+            const nx0b = n001 * (1 - u) + n101 * u;
+            const nx1b = n011 * (1 - u) + n111 * u;
+            const ny1 = nx0b * (1 - v) + nx1b * v;
+
+            return ny0 * (1 - w) + ny1 * w;
+        }
+
+        // ==================== CHAPTERS ====================
+        const chapters = [
+            {
+                name: 'Welcome',
+                text: 'Welcome, Varsha<br>I am Aditya<br>Here is your gift',
+                range: [0, 0.08],
+                isPreload: true,
+                render: (ctx, scroll, balls) => renderPreload(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsPreload(scroll, balls)
+            },
+            {
+                name: 'Earth',
+                text: 'We existed in the same world…<br>unaware we\'d one day become each other\'s home.',
+                range: [0.08, 0.23],
+                render: (ctx, scroll, balls) => renderEarth(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsEarth(scroll, balls)
+            },
+            {
+                name: 'Field',
+                text: 'Something about you felt familiar…<br>like a memory I hadn\'t lived yet.',
+                range: [0.23, 0.38],
+                render: (ctx, scroll, balls) => renderField(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsField(scroll, balls)
+            },
+            {
+                name: 'Cliff',
+                text: 'I didn\'t plan to fall.<br>I didn\'t resist either.',
+                range: [0.38, 0.53],
+                render: (ctx, scroll, balls) => renderCliff(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsCliff(scroll, balls)
+            },
+            {
+                name: 'Ocean',
+                text: 'We misunderstood.<br>We got hurt.<br>We almost lost each other.<br>Every story ends here…<br>unless you choose otherwise.',
+                range: [0.53, 0.78],
+                render: (ctx, scroll, balls) => renderOcean(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsOcean(scroll, balls)
+            },
+            {
+                name: 'Storm',
+                text: 'Love isn\'t perfect.<br>It\'s chosen.<br>Again. And again.<br>After everything…<br>I still choose you.<br>This story has no end.<br>Because I\'m still walking it with you.',
+                range: [0.78, 0.93],
+                render: (ctx, scroll, balls) => renderStorm(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsStorm(scroll, balls)
+            },
+            {
+                name: 'Aurora',
+                text: 'Happy Birthday Varsha',
+                range: [0.93, 1.00],
+                render: (ctx, scroll, balls) => renderAurora(ctx, scroll, balls),
+                updatePhysics: (scroll, balls) => physicsAurora(scroll, balls)
+            }
+        ];
+
+        // ==================== PRELOAD SCREEN ====================
+        function renderPreload(ctx, scroll, balls) {
+            const preloadScroll = scroll / 0.08;
+            const time = Date.now() * 0.0003;
+
+            // Deep space background
+            ctx.fillStyle = '#0a0015';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Nebula background
+            const nebGrad = ctx.createRadialGradient(canvas.width * 0.5, canvas.height * 0.4, 100, canvas.width * 0.5, canvas.height * 0.4, 600);
+            nebGrad.addColorStop(0, `rgba(167, 139, 250, ${0.15 + Math.sin(time) * 0.1})`);
+            nebGrad.addColorStop(0.4, `rgba(255, 0, 110, ${0.1 + Math.sin(time + 1) * 0.08})`);
+            nebGrad.addColorStop(1, `rgba(0, 240, 255, ${0.05 + Math.sin(time + 2) * 0.05})`);
+            ctx.fillStyle = nebGrad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Procedural stars
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            for (let i = 0; i < 500; i++) {
+                const x = (i * 73 + time * 20) % canvas.width;
+                const y = (i * 97) % canvas.height;
+                const twinkle = Math.sin(time * 2 + i) * 0.5 + 0.5;
+                ctx.globalAlpha = twinkle * 0.8;
+                ctx.beginPath();
+                ctx.arc(x, y, Math.random() * 1.5 + 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Nebula clouds
+            for (let layer = 0; layer < 3; layer++) {
+                const layerTime = time * (0.5 + layer * 0.3);
+                const colors = ['rgba(167, 139, 250, 0.1)', 'rgba(255, 0, 110, 0.08)', 'rgba(0, 240, 255, 0.1)'];
+                ctx.fillStyle = colors[layer];
+
+                for (let i = 0; i < 15; i++) {
+                    const x = canvas.width * 0.5 + (i * 150 - layerTime * 100) % (canvas.width + 300) - 150;
+                    const y = canvas.height * 0.3 + Math.sin(layerTime + i) * 100 + layer * 80;
+                    const size = 100 + Math.sin(layerTime + i * 0.5) * 40;
+                    ctx.beginPath();
+                    ctx.arc(x, y, size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Gift orb
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.35;
+            const orbSize = 80 + Math.sin(Date.now() * 0.004) * 8;
+            const orbRotation = preloadScroll * Math.PI * 2.5;
+
+            const orbGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, orbSize);
+            orbGrad.addColorStop(0, '#a78bfa');
+            orbGrad.addColorStop(0.5, '#ff006e');
+            orbGrad.addColorStop(1, '#ffd60a');
+
+            ctx.shadowColor = '#ff006e';
+            ctx.shadowBlur = 50;
+            ctx.fillStyle = orbGrad;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, orbSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Orbital particles around orb
+            ctx.shadowBlur = 0;
+            const particleCount = Math.floor(preloadScroll * 8) + 3;
+            for (let i = 0; i < particleCount; i++) {
+                const angle = (orbRotation + (i / particleCount) * Math.PI * 2);
+                const dist = orbSize + 40;
+                const px = centerX + Math.cos(angle) * dist;
+                const py = centerY + Math.sin(angle) * dist;
+                ctx.fillStyle = ['#00f0ff', '#ff006e', '#ffd60a'][i % 3];
+                ctx.beginPath();
+                ctx.arc(px, py, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Loading rings
+            const ringY = canvas.height * 0.65;
+            ctx.strokeStyle = `rgba(0, 240, 255, ${0.2 + preloadScroll * 0.3})`;
+            ctx.lineWidth = 2;
+
+            for (let ring = 0; ring < 3; ring++) {
+                const radius = 80 + ring * 30;
+                const rotation = (preloadScroll + ring * 0.3) * Math.PI * 2;
+                ctx.save();
+                ctx.translate(centerX, ringY);
+                ctx.rotate(rotation);
+                ctx.beginPath();
+                ctx.arc(0, 0, radius, -Math.PI * 0.3, Math.PI * 0.3);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Main loading bar
+            ctx.strokeStyle = `rgba(0, 240, 255, 0.3)`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width * 0.2, canvas.height * 0.8);
+            ctx.lineTo(canvas.width * 0.8, canvas.height * 0.8);
+            ctx.stroke();
+
+            const loadWidth = (canvas.width * 0.6) * preloadScroll;
+            const loadGrad = ctx.createLinearGradient(canvas.width * 0.2, 0, canvas.width * 0.2 + loadWidth, 0);
+            loadGrad.addColorStop(0, '#00f0ff');
+            loadGrad.addColorStop(0.5, '#ff006e');
+            loadGrad.addColorStop(1, '#ffd60a');
+            ctx.strokeStyle = loadGrad;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width * 0.2, canvas.height * 0.8);
+            ctx.lineTo(canvas.width * 0.2 + loadWidth, canvas.height * 0.8);
+            ctx.stroke();
+
+            // Loading dot
+            ctx.shadowColor = '#ff006e';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = '#ff006e';
+            ctx.beginPath();
+            ctx.arc(canvas.width * 0.2 + loadWidth, canvas.height * 0.8, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Text
+            ctx.shadowBlur = 0;
+            ctx.font = 'bold 48px Georgia';
+            ctx.fillStyle = '#00f0ff';
+            ctx.shadowColor = 'rgba(0, 240, 255, 0.5)';
+            ctx.shadowBlur = 30;
+            ctx.textAlign = 'center';
+            ctx.fillText('Welcome, Varsha', canvas.width * 0.5, canvas.height * 0.15);
+
+            ctx.font = '40px Georgia';
+            ctx.fillStyle = '#ff006e';
+            ctx.shadowColor = 'rgba(255, 0, 110, 0.5)';
+            ctx.fillText('I am Aditya', canvas.width * 0.5, canvas.height * 0.25);
+
+            if (preloadScroll > 0.3) {
+                const textAlpha = Math.min((preloadScroll - 0.3) / 0.4, 1);
+                ctx.font = 'italic 32px Georgia';
+                ctx.fillStyle = `rgba(255, 214, 10, ${textAlpha * 0.9})`;
+                ctx.shadowColor = `rgba(255, 214, 10, ${textAlpha * 0.6})`;
+                ctx.fillText('Here is your gift for you', canvas.width * 0.5, canvas.height * 0.5);
+            }
+
+            ctx.shadowBlur = 0;
+
+            // Supernova particles on completion
+            if (preloadScroll > 0.85) {
+                const intensity = (preloadScroll - 0.85) / 0.15;
+                for (let i = 0; i < Math.floor(intensity * 30); i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = Math.random() * 8 + 3;
+                    const px = centerX + Math.cos(angle) * 20;
+                    const py = centerY + Math.sin(angle) * 20;
+                    emitParticles(px, py, 1, ['rgba(0, 240, 255, 1)', 'rgba(255, 0, 110, 1)', 'rgba(255, 214, 10, 1)'][Math.floor(Math.random() * 3)], Math.cos(angle) * speed, Math.sin(angle) * speed, 0, 3);
+                }
+            }
+        }
+
+        function physicsPreload(scroll, balls) {
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.35;
+            const pulse = Math.sin(Date.now() * 0.004) * 15;
+
+            balls[0].x = centerX - 40 + pulse;
+            balls[0].y = centerY + pulse * 0.5;
+            balls[0].glow = 0.5 + Math.sin(Date.now() * 0.005) * 0.25;
+            balls[0].radius = 20 + Math.abs(pulse) * 0.3;
+
+            balls[1].x = centerX + 40 - pulse;
+            balls[1].y = centerY - pulse * 0.5;
+            balls[1].glow = 0.5 + Math.cos(Date.now() * 0.005) * 0.25;
+            balls[1].radius = 20 - Math.abs(pulse) * 0.3;
+        }
+
+        // ==================== EARTH CHAPTER ====================
+        function renderEarth(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.08) / 0.15;
+            const time = Date.now() * 0.00008;
+
+            // Deep space background
+            ctx.fillStyle = '#0a0015';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Stars
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            for (let i = 0; i < 400; i++) {
+                const x = (i * 83) % canvas.width;
+                const y = (i * 137) % canvas.height;
+                const twinkle = Math.sin(time * 3 + i) * 0.5 + 0.5;
+                ctx.globalAlpha = twinkle * 0.6;
+                ctx.beginPath();
+                ctx.arc(x, y, 1, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.5;
+            const earthRadius = 150 + chapterScroll * 80;
+
+            // Earth base - ocean
+            ctx.fillStyle = '#0a3d5c';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, earthRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Procedural continents
+            for (let angle = 0; angle < Math.PI * 2; angle += 0.1) {
+                for (let r = 0; r < earthRadius; r += 20) {
+                    const x = centerX + Math.cos(angle + time * 0.5) * r;
+                    const y = centerY + Math.sin(angle + time * 0.5) * r;
+                    const noise = perlinNoise(x * 0.01, y * 0.01, time * 10);
+                    
+                    if (noise > 0.4) {
+                        const landColor = noise > 0.65 ? '#2d5016' : '#1a3a0f';
+                        ctx.fillStyle = landColor;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+
+            // Cloud layer
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            for (let i = 0; i < 30; i++) {
+                const cloudAngle = (i / 30) * Math.PI * 2 + time * 0.3;
+                const cloudRadius = earthRadius * 0.95;
+                const cx = centerX + Math.cos(cloudAngle) * cloudRadius;
+                const cy = centerY + Math.sin(cloudAngle) * cloudRadius;
+                const cloudSize = 30 + Math.sin(time * 2 + i) * 10;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, cloudSize, cloudSize * 0.6, cloudAngle, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Atmosphere glow
+            const atmosphereGrad = ctx.createRadialGradient(centerX, centerY, earthRadius, centerX, centerY, earthRadius + 40);
+            atmosphereGrad.addColorStop(0, 'rgba(135, 206, 235, 0.4)');
+            atmosphereGrad.addColorStop(1, 'rgba(135, 206, 235, 0)');
+            ctx.fillStyle = atmosphereGrad;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, earthRadius + 40, 0, Math.PI * 2);
+            ctx.fill();
+
+            // City lights on night side
+            ctx.fillStyle = 'rgba(255, 214, 10, 0.7)';
+            ctx.shadowColor = 'rgba(255, 214, 10, 0.5)';
+            ctx.shadowBlur = 15;
+            for (let i = 0; i < 50; i++) {
+                const angle = (i * 0.126) + time * 0.5;
+                const lightX = centerX + Math.cos(angle) * earthRadius * 0.9;
+                const lightY = centerY + Math.sin(angle) * earthRadius * 0.9;
+                const glow = Math.sin(time * 3 + i) * 0.5 + 0.5;
+                ctx.globalAlpha = glow * 0.6;
+                ctx.beginPath();
+                ctx.arc(lightX, lightY, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 0;
+
+            // Aurora borealis
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.2)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                for (let x = centerX - earthRadius; x < centerX + earthRadius; x += 50) {
+                    const y = centerY - earthRadius * 0.8 + Math.sin((x - centerX) * 0.02 + time + i * 0.5) * 20;
+                    x === centerX - earthRadius ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            // Light rays
+            ctx.strokeStyle = 'rgba(255, 200, 100, 0.1)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2 - Math.PI * 0.25;
+                ctx.beginPath();
+                ctx.moveTo(centerX + Math.cos(angle) * earthRadius, centerY + Math.sin(angle) * earthRadius);
+                ctx.lineTo(centerX + Math.cos(angle) * (earthRadius + 100), centerY + Math.sin(angle) * (earthRadius + 100));
+                ctx.stroke();
+            }
+        }
+
+        function physicsEarth(scroll, balls) {
+            const chapterScroll = (scroll - 0.08) / 0.15;
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.5;
+            const earthRadius = 150 + chapterScroll * 80;
+
+            // Ball 1 - blue on day side
+            const angle1 = chapterScroll * Math.PI * 2;
+            balls[0].x = centerX + Math.cos(angle1) * earthRadius * 1.2;
+            balls[0].y = centerY + Math.sin(angle1) * earthRadius * 0.8;
+            balls[0].glow = 0.3 + chapterScroll * 0.4;
+
+            // Ball 2 - red on night side
+            const angle2 = Math.PI + chapterScroll * Math.PI * 2;
+            balls[1].x = centerX + Math.cos(angle2) * earthRadius * 1.2;
+            balls[1].y = centerY + Math.sin(angle2) * earthRadius * 0.8;
+            balls[1].glow = 0.3 + chapterScroll * 0.4;
+        }
+
+        // ==================== REMAINING CHAPTERS ====================
+        function renderField(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.23) / 0.15;
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, `hsl(${200 + chapterScroll * 50}, 80%, ${20 + chapterScroll * 30}%)`);
+            grad.addColorStop(1, `hsl(${40 + chapterScroll * 40}, 90%, ${40 + chapterScroll * 20}%)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = `hsl(100, 50%, ${20 + chapterScroll * 20}%)`;
+            ctx.fillRect(0, canvas.height * 0.6, canvas.width, canvas.height * 0.4);
+
+            const time = Date.now() * 0.005;
+            ctx.strokeStyle = 'rgba(100, 150, 80, 0.2)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 20; i++) {
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width; x += 10) {
+                    const y = canvas.height * 0.6 + i * 10 + Math.sin(x * 0.01 + time) * 5;
+                    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            for (let i = 0; i < 3; i++) {
+                const bx = (i * 300 + time * 100) % (canvas.width + 50);
+                const by = 100 + i * 50 + Math.sin(time * 0.5 + i) * 20;
+                ctx.fillStyle = 'rgba(100, 100, 120, 0.5)';
+                ctx.beginPath();
+                ctx.ellipse(bx, by, 15, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function physicsField(scroll, balls) {
+            const chapterScroll = (scroll - 0.23) / 0.15;
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.4;
+
+            balls[0].x += (centerX - balls[0].x) * 0.001 * chapterScroll;
+            balls[0].y += (centerY - balls[0].y) * 0.001 * chapterScroll;
+            balls[1].x += (centerX - balls[1].x) * 0.001 * chapterScroll;
+            balls[1].y += (centerY - balls[1].y) * 0.001 * chapterScroll;
+
+            balls[0].glow = 0.3 + chapterScroll * 0.3;
+            balls[1].glow = 0.3 + chapterScroll * 0.3;
+        }
+
+        function renderCliff(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.38) / 0.15;
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, `hsl(280, 80%, ${30 - chapterScroll * 20}%)`);
+            grad.addColorStop(1, `hsl(40, 80%, ${40 - chapterScroll * 20}%)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = `hsl(30, 40%, ${30 - chapterScroll * 10}%)`;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height * 0.5);
+            for (let x = 0; x < canvas.width; x += 20) {
+                ctx.lineTo(x, canvas.height * 0.5 + Math.sin(x * 0.01) * 30);
+            }
+            ctx.lineTo(canvas.width, 0);
+            ctx.lineTo(0, 0);
+            ctx.fill();
+
+            const time = Date.now() * 0.01;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${chapterScroll * 0.3})`;
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 10; i++) {
+                const y = i * (canvas.height / 10) + time * 50;
+                ctx.beginPath();
+                ctx.moveTo(0, y % canvas.height);
+                ctx.lineTo(canvas.width, (y + 100) % canvas.height);
+                ctx.stroke();
+            }
+        }
+
+        function physicsCliff(scroll, balls) {
+            const chapterScroll = (scroll - 0.38) / 0.15;
+            const centerX = canvas.width * 0.5;
+            const angle = chapterScroll * Math.PI * 4;
+            const radius = 150 * (1 - chapterScroll);
+
+            balls[0].x = centerX + Math.cos(angle) * radius;
+            balls[0].y = canvas.height * 0.3 + chapterScroll * canvas.height * 0.4;
+            balls[1].x = centerX - Math.cos(angle) * radius;
+            balls[1].y = canvas.height * 0.3 + chapterScroll * canvas.height * 0.4;
+
+            balls[0].glow = 0.6 + chapterScroll * 0.2;
+            balls[1].glow = 0.6 + chapterScroll * 0.2;
+        }
+
+        function renderOcean(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.53) / 0.25;
+            const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grad.addColorStop(0, `hsl(200, 60%, ${15 - chapterScroll * 5}%)`);
+            grad.addColorStop(0.5, `hsl(210, 70%, ${10 - chapterScroll * 3}%)`);
+            grad.addColorStop(1, `hsl(220, 80%, ${5 - chapterScroll * 2}%)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const time = Date.now() * 0.001;
+            ctx.strokeStyle = 'rgba(100, 180, 200, 0.1)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 8; i++) {
+                const x = (i * canvas.width / 8) + Math.sin(time + i) * 20;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x + Math.sin(time * 0.5 + i) * 100, canvas.height);
+                ctx.stroke();
+            }
+
+            emitParticles(Math.random() * canvas.width, 0, 2, 'rgba(150, 200, 220, 1)', 0, 1);
+        }
+
+        function physicsOcean(scroll, balls) {
+            const chapterScroll = (scroll - 0.53) / 0.25;
+
+            const dist = Math.hypot(balls[1].x - balls[0].x, balls[1].y - balls[0].y);
+            const minDist = 60;
+
+            if (dist > minDist) {
+                const angle = Math.atan2(balls[1].y - balls[0].y, balls[1].x - balls[0].x);
+                balls[0].applyForce(Math.cos(angle) * 0.5, Math.sin(angle) * 0.5);
+                balls[1].applyForce(-Math.cos(angle) * 0.5, -Math.sin(angle) * 0.5);
+            }
+
+            const time = Date.now() * 0.003;
+            balls[0].y += Math.sin(time) * 0.5;
+            balls[1].y += Math.cos(time) * 0.5;
+
+            balls[0].vy *= 0.95;
+            balls[1].vy *= 0.95;
+
+            balls[0].glow = 0.5 + chapterScroll * 0.1;
+            balls[1].glow = 0.5 + chapterScroll * 0.1;
+        }
+
+        function renderStorm(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.78) / 0.15;
+            ctx.fillStyle = `hsl(0, 0%, ${10 - chapterScroll * 5}%)`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (Math.sin(Date.now() * 0.01) > 0.7) {
+                ctx.fillStyle = `rgba(200, 200, 255, ${Math.random() * 0.3})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            const time = Date.now() * 0.01;
+            ctx.strokeStyle = 'rgba(200, 200, 255, 0.8)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 3; i++) {
+                if (Math.sin(time * 2 + i) > 0.5) {
+                    const x = Math.random() * canvas.width;
+                    const y = 0;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    let cx = x, cy = y;
+                    for (let j = 0; j < 10; j++) {
+                        cx += (Math.random() - 0.5) * 40;
+                        cy += canvas.height / 10;
+                        ctx.lineTo(cx, cy);
+                    }
+                    ctx.stroke();
+                }
+            }
+
+            for (let i = 0; i < 50; i++) {
+                emitParticles(Math.random() * canvas.width, 0, 2, 'rgba(100, 100, 100, 1)', 0, 5);
+            }
+        }
+
+        function physicsStorm(scroll, balls) {
+            const chapterScroll = (scroll - 0.78) / 0.15;
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.3;
+
+            if (chapterScroll < 0.5) {
+                balls[0].applyForce((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6);
+                balls[1].applyForce((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6);
+            } else {
+                const stabilize = (chapterScroll - 0.5) / 0.5;
+                balls[0].x += (centerX - 60 - balls[0].x) * 0.08 * stabilize;
+                balls[0].y += (centerY - balls[0].y) * 0.08 * stabilize;
+                balls[1].x += (centerX + 60 - balls[1].x) * 0.08 * stabilize;
+                balls[1].y += (centerY - balls[1].y) * 0.08 * stabilize;
+
+                const angle = Math.atan2(balls[1].y - balls[0].y, balls[1].x - balls[0].x);
+                balls[0].applyForce(Math.cos(angle) * 0.6, Math.sin(angle) * 0.6);
+                balls[1].applyForce(-Math.cos(angle) * 0.6, -Math.sin(angle) * 0.6);
+            }
+
+            balls[0].glow = 0.3 + Math.min(chapterScroll, 1) * 0.5;
+            balls[1].glow = 0.3 + Math.min(chapterScroll, 1) * 0.5;
+        }
+
+        function renderAurora(ctx, scroll, balls) {
+            const chapterScroll = (scroll - 0.93) / 0.07;
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            grad.addColorStop(0, `hsla(280, 100%, 30%, 0.5)`);
+            grad.addColorStop(0.3, `hsla(200, 100%, 40%, 0.6)`);
+            grad.addColorStop(0.6, `hsla(120, 100%, 40%, 0.5)`);
+            grad.addColorStop(1, `hsla(0, 0%, 10%, 1)`);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const time = Date.now() * 0.0003;
+            ctx.strokeStyle = 'rgba(100, 255, 150, 0.3)';
+            ctx.lineWidth = 3;
+            for (let i = 0; i < 10; i++) {
+                ctx.beginPath();
+                for (let x = 0; x < canvas.width; x += 20) {
+                    const y = canvas.height * 0.3 + Math.sin(x * 0.01 + time + i * 0.5) * 50 + i * 20;
+                    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            for (let i = 0; i < 100; i++) {
+                const x = (i * 127.4 + time * 100) % canvas.width;
+                const y = (i * 73.2) % (canvas.height * 0.5);
+                ctx.beginPath();
+                ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function physicsAurora(scroll, balls) {
+            const centerX = canvas.width * 0.5;
+            const centerY = canvas.height * 0.4;
+            const angle = Date.now() * 0.001;
+            const distance = 40;
+
+            balls[0].x = centerX + Math.cos(angle) * distance;
+            balls[0].y = centerY + Math.sin(angle) * distance * 0.5;
+            balls[1].x = centerX - Math.cos(angle) * distance;
+            balls[1].y = centerY - Math.sin(angle) * distance * 0.5;
+
+            balls[0].glow = 0.8 + Math.sin(Date.now() * 0.004) * 0.2;
+            balls[1].glow = 0.8 + Math.cos(Date.now() * 0.004) * 0.2;
+        }
+
+        // ==================== MAIN ANIMATION LOOP ====================
+        const blue = new Ball(canvas.width * 0.2, canvas.height * 0.3, 25, 'rgba(59, 130, 246, 1)');
+        const red = new Ball(canvas.width * 0.8, canvas.height * 0.7, 25, 'rgba(239, 68, 68, 1)');
+        const balls = [blue, red];
+
+        function getScrollProgress() {
+            const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+            const scrollTop = window.scrollY || document.documentElement.scrollTop;
+            return scrollHeight > 0 ? Math.max(0, Math.min(1, scrollTop / scrollHeight)) : 0;
+        }
+
+        function updateChapterText() {
+            const progress = getScrollProgress();
+            const chapter = chapters.find(c => progress >= c.range[0] && progress < c.range[1]) || chapters[chapters.length - 1];
+            const textEl = document.getElementById('chapterText');
+
+            const inChapterProgress = (progress - chapter.range[0]) / (chapter.range[1] - chapter.range[0]);
+            const shouldShow = inChapterProgress > 0.05 && inChapterProgress < 0.95;
+
+            if (!chapter.isPreload) {
+                textEl.innerHTML = chapter.text;
+                if (shouldShow) {
+                    textEl.classList.add('visible');
+                } else {
+                    textEl.classList.remove('visible');
+                }
+            } else {
+                textEl.classList.remove('visible');
+            }
+        }
+
+        function animate() {
+            const scroll = getScrollProgress();
+            const chapter = chapters.find(c => scroll >= c.range[0] && scroll < c.range[1]) || chapters[chapters.length - 1];
+
+            chapter.updatePhysics(scroll, balls);
+            balls.forEach(ball => ball.update());
+
+            particles.forEach(p => p.update());
+            particles.splice(0, particles.length - particles.filter(p => p.life > 0).length);
+
+            ctx.fillStyle = '#0a0015';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            chapter.render(ctx, scroll, balls);
+
+            particles.forEach(p => p.draw(ctx));
+            balls.forEach(ball => ball.draw(ctx));
+
+            document.getElementById('scrollTracker').textContent = Math.round(scroll * 100) + '%';
+            document.getElementById('progressBar').style.width = (scroll * 100) + '%';
+            updateChapterText();
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
